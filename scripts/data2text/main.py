@@ -13,18 +13,17 @@ from pytorch_lightning import seed_everything
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-
+import numpy as np
 import random
 import pandas as pd
-
 from tqdm import tqdm
 
 
 task = "asqp"
 data_dir = "rest16"
-train_epoch = 10
+train_epoch = 5
 load_file = f"save/pesudo_parallel_data_{task}_{data_dir}"
-num_generate_data = 2000
+num_generate_data = 200000
 generate_batch_size = 128
 
 # Dataset for Fact2Text
@@ -56,12 +55,14 @@ train_dataloader2 = DataLoader(train_dataset2, batch_size=8, drop_last=True, shu
 val_dataloader2 = DataLoader(val_dataset2, batch_size=16, drop_last=True, shuffle=True, num_workers=4, collate_fn=collate_fn)
 test_dataloader2 = DataLoader(test_dataset2, batch_size=16, drop_last=True, shuffle=True, num_workers=4, collate_fn=collate_fn)
 
-# Define Model
+# D2T Model
+
+## Define Model
 
 seed_everything(0, workers=True)
 d2t_tuner = Data2TextTuner()
 
-# define Trainer
+## define Trainer
 
 checkpoint_callback = ModelCheckpoint(
                                       save_weights_only=True,
@@ -78,7 +79,7 @@ train_params = dict(
         )
 trainer = pl.Trainer(**train_params)
 
-# Training
+## Training Data2Text Model
 trainer.fit(model=d2t_tuner, train_dataloaders=train_dataloader2, val_dataloaders=val_dataloader2)
 
 # Augmentation
@@ -89,7 +90,6 @@ for data in train_dataset2:
     collection_quads.extend(data.quads)
 
 ## augment facts
-
 if task in ["acos", "asqp"]:
     collection_quads, collection_quads_cate_dict = augemnt_collection_quads(collection_quads)
 
@@ -113,24 +113,9 @@ for i in tqdm(range(int(num_generate_data/generate_batch_size))):
 pesudo_parallel = pd.DataFrame(pesudo_parallel)
 pesudo_parallel.to_csv(load_file, encoding='utf_8_sig', index=False)
 
-## remove marker
-
-pesudo_parallel_remove_marker = []
-for i in range(len(pesudo_parallel)):
-    data = pesudo_parallel.iloc[i]
-    quads = eval(data.quads)
-    text = data.text
-    try:
-            text = remove_marker(text)
-            pesudo_parallel_remove_marker.append({"quads":quads, "text": text})
-    except:
-        pass
-
-pesudo_parallel_remove_marker = pd.DataFrame(pesudo_parallel_remove_marker)
-pesudo_parallel_remove_marker.to_csv(f"{load_file}_remove_marker",
-                                     encoding='utf_8_sig', index=False)
-
 ## Compare annotation with fact input
+
+pesudo_parallel = pd.read_csv(f"{load_file}", encoding='utf_8_sig')
 
 filtered_pesudo_parallel_by_compare = []
 
@@ -153,7 +138,7 @@ for i in range(len(pesudo_parallel)):
         pass
 
 filtered_pesudo_parallel_by_compare = pd.DataFrame(filtered_pesudo_parallel_by_compare)
-filtered_pesudo_parallel_by_compare.to_csv(f"{load_file}_filtered",
+filtered_pesudo_parallel_by_compare.to_csv(f"{load_file}_filtered_step_1",
                                            encoding='utf_8_sig', index=False)
 
 ## Check context words using corpus
@@ -180,16 +165,27 @@ filtered_pesudo_parallel_by_check_key_phrase.to_csv(f"{load_file}_filtered",
 
 # Solve Unbalance
 def under_sampling_make_uniform_distribution(texts, quads_list, score_list):
+
     import numpy as np
 
     x = []
     y = []
-    threshold_list = list(np.arange(2.4, 8.5, 0.5))
+    threshold_list = []
+
+    bins = list(np.arange(0, 10, 0.5))
+    segments = pd.cut(tfidf_mean_score_list, bins, right=False)
+    counts = pd.value_counts(segments, normalize=True, sort=False)
+    print(counts)
+
+    for thre in counts.index:
+        if counts[thre] >= 0.01:
+            threshold_list.append([thre.left, thre.right])
 
     class_dict = {}
-    for i in range(len(threshold_list) - 1):
-        class_dict[i] = [threshold_list[i], threshold_list[i + 1]]
+    for i in range(len(threshold_list)):
+        class_dict[i] = threshold_list[i]
     print(class_dict)
+
     for i, (t, q, s) in enumerate(zip(texts, quads_list, score_list)):
         for k, v in class_dict.items():
             if v[0] <= s and v[1] > s:
