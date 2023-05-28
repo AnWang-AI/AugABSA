@@ -67,10 +67,7 @@ class FineTuner(pl.LightningModule):
         return collater(tokenizer=tokenier, max_len=hparams.max_seq_length, task=hparams.task, dataset=hparams.dataset,)
 
     def forward(self,
-                input_ids, input_mask, tgt_ids, tgt_mask,
-                forward=True,
-                back=True,
-                consistency_learning=False,
+                input_ids, input_mask, tgt_ids, tgt_mask
                 ):
 
         return_dict = {}
@@ -83,17 +80,14 @@ class FineTuner(pl.LightningModule):
 
         return return_dict
 
-    def _step(self, batch, forward=True, back=True,
-              consistency_learning=False, loss_weight=None):
+    def _step(self, batch):
 
 
         # get inputs from batch
 
         loss = 0
 
-        outputs = self(batch["source_ids"], batch["source_mask"], batch["target_ids"], batch['target_mask'],
-                       forward, back, consistency_learning)
-
+        outputs = self(batch["source_ids"], batch["source_mask"], batch["target_ids"], batch['target_mask'])
         loss += outputs["generate_loss"]
 
         return loss
@@ -113,12 +107,12 @@ class FineTuner(pl.LightningModule):
         self.process_mode = "train"
         loss = 0
 
-        forward_loss = self._step(sup_batch, True, False)
+        forward_loss = self._step(sup_batch)
         loss += forward_loss
         if self.hyperparams.aug:
 
             alpha = 0.1
-            aug_loss = self._step(aug_batch, True, False) / (self.aug_mulriple)
+            aug_loss = self._step(aug_batch) / (self.aug_mulriple)
             loss += aug_loss * alpha
             loss /= 1 + alpha
 
@@ -135,15 +129,7 @@ class FineTuner(pl.LightningModule):
         return outputs
 
 
-    def load_augmented_data(self, batch_size, min_threshold=0, max_threshold=500):
-
-        def filter_text(l, filered):
-            output = []
-            for e in l:
-                if e not in filered:
-                    output.append(e)
-            return output
-
+    def load_augmented_data(self, batch_size, aug_dataset_max_size):
 
         if self.hyperparams.aug_method in ['eda', 'aeda', 'back_translation', 'identity']:
             pesudo_parallel = pd.read_csv("save/pesudo_parallel_data_%s_%s_%s" % (self.hyperparams.task,
@@ -158,8 +144,8 @@ class FineTuner(pl.LightningModule):
         quads_list = [eval(q) for q, t in pesudo_parallel["data"]]
         texts = [t for q, t in pesudo_parallel["data"]]
         data_list = []
-        quads_list = quads_list[:20000]
-        texts = texts[:20000]
+        quads_list = quads_list[:aug_dataset_max_size]
+        texts = texts[:aug_dataset_max_size]
         for source, quads in zip(texts, quads_list):
             try:
                 if self.hyperparams.task in ["acos", "asqp"]:
@@ -370,7 +356,8 @@ class FineTuner(pl.LightningModule):
                             drop_last=True, shuffle=True, num_workers=4, collate_fn=self.collate_fn)
 
         if self.hyperparams.aug:
-            aug_dataloader = self.load_augmented_data(batch_size=self.hyperparams.train_batch_size * self.aug_mulriple)
+            aug_dataloader = self.load_augmented_data(batch_size=self.hyperparams.train_batch_size * self.aug_mulriple,
+                                                      aug_dataset_max_size=len(self.train_dataset) * self.aug_mulriple)
             return {"sup": train_dataloader, "aug": aug_dataloader}
         else:
             return {"sup": train_dataloader}

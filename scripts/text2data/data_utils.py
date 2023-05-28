@@ -696,8 +696,8 @@ class collater():
         source_ids = tokenized_input["input_ids"].squeeze()
         target_ids = tokenized_target["input_ids"].squeeze()
 
-        src_mask = tokenized_input["attention_mask"].squeeze()  # might need to squeeze
-        target_mask = tokenized_target["attention_mask"].squeeze()  # might need to squeeze
+        src_mask = tokenized_input["attention_mask"].squeeze()
+        target_mask = tokenized_target["attention_mask"].squeeze()
 
         if self.task in ["aste", "ere"]:
             return TripleExtractionLoaderData(source_ids, src_mask,

@@ -3,36 +3,8 @@ from torch.utils.data import DataLoader
 import re
 
 import random
-from scripts.data_utils import QuadExtractionData, TripletExtractionData
+from scripts.text2data.data_utils import QuadExtractionData, TripletExtractionData
 from itertools import permutations
-
-
-class AOGDataset(Dataset):
-    # generate text from given aspect and opinions
-
-    def __init__(self, texts, aspects, opinions, max_len=512):
-        self.texts = texts
-        self.aspects = aspects
-        self.opinions = opinions
-        assert len(self.texts) == len(self.aspects)
-        assert len(self.aspects) == len(self.opinions)
-        self.d_ts = [self.data_to_text(a, o) for a, o in zip(aspects, opinions)]
-
-    def __len__(self):
-        return len(self.texts)
-
-    def data_to_text(self, aspects, opinions):
-        a_t = "Aspects: " + ', '.join(aspects) + " [SSEP] "
-        o_t = "Opinions: " + ', '.join(opinions) + " [SSEP] "
-        d_t = a_t + o_t
-        return d_t
-
-    def __getitem__(self, idx):
-        text = self.texts[idx]
-        d_t = self.d_ts[idx]
-        a = self.aspects[idx]
-        o = self.opinions[idx]
-        return text, d_t, a, o
 
 
 class data2text_collater():
@@ -286,17 +258,12 @@ def trans_dataset_add_annotation_to_source(dataset, task="asqp"):
             data = QuadExtractionData(source,
                                       target,
                                       quads,
-                                      d.span_label,
-                                      d.cate_label,
-                                      d.rel_label,
                                       d.token_len)
 
         elif len(d.quads[0]) == 3:
             data = TripletExtractionData(source,
                                          target,
                                          quads,
-                                         d.span_label,
-                                         d.rel_label,
                                          d.token_len)
         return data
 
@@ -307,7 +274,8 @@ def trans_dataset_add_annotation_to_source(dataset, task="asqp"):
         quads = d.quads
         source = d.source_text
 
-        if len(quads) == 0: continue
+        if len(quads) == 0:
+            continue
 
         # count num of quads
         if len(quads) in count.keys():
@@ -324,10 +292,59 @@ def trans_dataset_add_annotation_to_source(dataset, task="asqp"):
                 datalist.append(get_data(d, quads, task))
         else:
             datalist.append(get_data(d, d.quads, task))
-        # except:
-        #     print(d)
-        #     continue
 
     print(count)
     len(datalist)
     return datalist
+
+def preprade_data_cuda(texts, tokenizer):
+    if type(texts) == str:
+        texts = [texts]
+    tokenized_target = tokenizer.batch_encode_plus(
+          texts, max_length=512, padding='longest',
+          truncation=True, return_tensors="pt"
+        )
+    target_ids = tokenized_target["input_ids"].cuda()
+    target_mask = tokenized_target["attention_mask"].cuda()
+    token_len = tokenizer(texts, return_length=True).length
+    return target_ids, target_mask, token_len
+
+def generate(texts, model, tokenizer):
+    target_ids, target_mask, token_len = preprade_data_cuda(texts, tokenizer)
+    model = model.cuda()
+    outs = model.generate(input_ids=target_ids,
+                          attention_mask=target_mask,
+                          max_length=512,
+                          do_sample=True,
+                          top_k=20,
+                          top_p=5,)
+    output_text = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
+    return output_text
+
+
+def remove_marker(text):
+    text = re.sub(r"\[a\] | \[[0-9|,]+ /a\]", "", text)
+    text = re.sub(r"\[o\] | \[[0-9|,]+ /o\]", "", text)
+
+    return text
+
+def augemnt_collection_quads(collection_quads):
+    collection_quads_cate_dict = {}
+    for c, a, o, s in collection_quads:
+        if c not in collection_quads_cate_dict.keys():
+            collection_quads_cate_dict[c] = [[c, a, o, s]]
+        else:
+            if [c, a, o, s] not in collection_quads_cate_dict[c]:
+                collection_quads_cate_dict[c].append([c, a, o, s])
+
+    aug_collection_quads = []
+    for cate_type, quads in collection_quads_cate_dict.items():
+        at_list = list(set([q[1] for q in quads]))
+        ot_sp_list = list(set([(q[2], q[3]) for q in quads]))
+        print(cate_type, len(at_list), len(ot_sp_list))
+        for i in range(min(500, len(at_list) * len(ot_sp_list))):
+            at = random.sample(at_list, 1)[0]
+            ot, sp = random.sample(ot_sp_list, 1)[0]
+            aug_collection_quads.append([cate_type, at, ot, sp])
+
+    return aug_collection_quads, collection_quads_cate_dict

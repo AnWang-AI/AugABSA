@@ -25,7 +25,7 @@ do
       --forward \
       --template_version v3 \
       --debug \
-#      --aug_load_file save/pesudo_parallel_data_ere_SCIERC_256000_filtered \
+#      --aug_load_file save/pesudo_parallel_data_ere_SCIERC_filtered \
 #      --aug \
 #      --debug \
 

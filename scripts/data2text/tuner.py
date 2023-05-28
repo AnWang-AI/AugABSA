@@ -3,6 +3,8 @@ from transformers import AdamW, T5ForConditionalGeneration, T5TokenizerFast
 from torchmetrics.text.rouge import ROUGEScore
 from torchmetrics import BLEUScore
 from scripts.data2text.eval_utils import GenetateMetric
+from scripts.data2text.data_utils import remove_marker
+
 
 class Data2TextTuner(pl.LightningModule):
     def __init__(self, ):
