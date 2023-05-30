@@ -37,8 +37,8 @@ torchmetrics
 1. Set up the environment
 2. Data Augmentation
     - AugABSA/scripts/data2text/main.py
-        2. Train Q2T model using ASQP/ASTE training dataset
-        3. Synthesize parallel data
-        4. Filtering and balancing
+        - Train Q2T model using ASQP/ASTE training dataset
+        - Synthesize parallel data
+        - Filtering and balancing
 3. Train T2Q model using both training dataset and augmented dataset
     - AugABSA/scripts/text2data/main.py
